@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+venv/
+models/
+knowledge_base/**
+!knowledge_base/README.md
+!knowledge_base/manifest.json
+!knowledge_base/RUNTIME_REQUIREMENTS.md
+tools/ffmpeg/
+tools/llama.cpp/b*/
+*.mp4
+*.wav
+*.log
+.env
+config.local.yaml
+backups/
+*.zip

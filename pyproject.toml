@@ -1,0 +1,9 @@
+[project]
+name = "local-video-rag"
+version = "0.3.0"
+description = "Offline-first local video knowledge base with traceable timed evidence"
+requires-python = ">=3.11,<3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+

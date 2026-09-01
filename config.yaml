@@ -1,0 +1,118 @@
+project:
+  # 整个目录可在停止服务后整体复制到另一台电脑。
+  assets_dir: knowledge_base
+  sources_dir: knowledge_base/media
+  data_dir: knowledge_base/data
+  models_dir: models
+  glossaries_dir: knowledge_base/glossaries
+  ffmpeg: tools/ffmpeg/bin/ffmpeg.exe
+
+models:
+  asr: models/asr
+  vad: models/vad
+  punctuation: models/punctuation
+  embedding: models/embedding-v1.5
+  reranker: models/reranker
+  embedding_dimension: 1024
+  embedding_max_tokens: 512
+  embedding_device: cpu
+  reranker_device: cpu
+
+asr:
+  # 手动切回旧模型时改为 funasr；不会静默回退。
+  primary: qwen3_asr
+  fallback: null
+  preflight:
+    # 当前机器与模型已经完成多次全流程验证；日常入库默认直接运行完整ASR。
+    # 更换电脑、模型、设备或精度时，可临时改回 true 重新测速。
+    enabled: false
+    sample_seconds: 60
+  resources:
+    unload_qa_during_asr: true
+  providers:
+    qwen3_asr:
+      model: models/qwen3-asr-1.7b-hf
+      aligner: models/qwen3-forced-aligner-0.6b-hf
+      device: cpu
+      dtype: bfloat16
+      chunk_seconds: 180
+      silence_search_seconds: 5
+      # Qwen偶尔会把数分钟口播输出成一个逗号串联的超长句；只提升已有
+      # 逗号/分号为句号，不改任何词，原始文本仍保存在ASR checkpoint。
+      max_sentence_chars: 240
+      max_new_tokens: 2048
+    funasr:
+      asr: models/asr
+      vad: models/vad
+      punctuation: models/punctuation
+
+llm:
+  backend: llama_server
+  base_url: http://127.0.0.1:1234/v1
+  model: qwen3.5-4b
+  server_path: tools/llama.cpp/b10621/llama-server.exe
+  model_path: models/generator/Qwen3.5-4B-Q4_K_M.gguf
+  api_key: local-rag-loopback
+  gpu_layers: all
+  flash_attention: "on"
+  context_window: 32000
+  evidence_budget_ratio: 0.5
+  timeout_seconds: 60
+  load_timeout_seconds: 180
+  max_answer_tokens: 512
+  # 总尝试次数（包含首次）；4B量化模型偶尔会返回不完整JSON。
+  max_retries: 3
+  auto_start: false
+
+sectioning:
+  # 父章节不能是单独问候、过渡句或致谢；短视频整体不受此限制。
+  hard_min_ms: 60000
+  target_min_ms: 120000
+  ideal_min_ms: 180000
+  ideal_max_ms: 360000
+  target_max_ms: 480000
+  hard_max_ms: 720000
+  window_sentences: 4
+  qwen_review_radius: 3
+  # 每个候选边界独立生成一个短JSON；失败只回退该边界。
+  qwen_boundary_attempts: 2
+  qwen_boundary_max_tokens: 192
+  # 删除候选后扫描原左右章节的完整合并范围，寻找远处替代边界。
+  qwen_replacement_attempts: 2
+  qwen_replacement_max_tokens: 192
+  # 章节标签用小批次，避免4B模型在长JSON尾部被截断。
+  qwen_label_batch_size: 2
+  qwen_label_attempts: 2
+  qwen_label_max_tokens: 512
+  semantic_weight: 0.65
+  silence_weight: 0.20
+  discourse_weight: 0.15
+
+corrections:
+  batch_target_tokens: 1800
+  overlap_sentences: 2
+
+chunking:
+  target_min_tokens: 180
+  target_max_tokens: 320
+  hard_max_tokens: 480
+  min_tokens: 80
+  embedding_neighbor_sentences: 1
+
+retrieval:
+  vector_candidates: 30
+  lexical_candidates: 30
+  rerank_candidates: 16
+  max_sections: 3
+  rrf_k: 60
+  min_dense_cosine: 0.45
+  min_reranker_score: 0.50
+  exact_term_bonus: 0.02
+  query_expansions: 0
+
+web:
+  host: 127.0.0.1
+  port: 8765
+  query_logging: true
+  query_log_retention_days: 90
+  clip_cache_max_mb: 1024
