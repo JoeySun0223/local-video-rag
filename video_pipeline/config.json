@@ -1,0 +1,35 @@
+{
+  "partition": "2026-09",
+  "data_root": "data",
+  "history_root": "history",
+  "work_root": "work",
+  "business_library_root": "business_knowledge_library",
+  "glossary": "resources/glossary.json",
+  "ffmpeg": "tools/ffmpeg/bin/ffmpeg.exe",
+  "asr": {
+    "primary": "qwen3_asr",
+    "preflight": {
+      "enabled": false,
+      "sample_seconds": 60
+    },
+    "providers": {
+      "qwen3_asr": {
+        "model": "models/qwen3-asr-1.7b-hf",
+        "aligner": "models/qwen3-forced-aligner-0.6b-hf",
+        "device": "cpu",
+        "dtype": "bfloat16",
+        "chunk_seconds": 180,
+        "silence_search_seconds": 5,
+        "max_sentence_chars": 240,
+        "max_new_tokens": 2048
+      }
+    }
+  },
+  "cloud": {
+    "api_url": "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+    "api_key_env": "ZHIPUAI_API_KEY",
+    "model": "glm-5.3",
+    "thinking": true,
+    "timeout_seconds": 300
+  }
+}

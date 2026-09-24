@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>视频数据处理</title>
+  <link rel="stylesheet" href="/static/style.css?v=20260917-editor-review-15">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" data-nav>视频数据处理</a>
+    <div class="header-actions">
+      <button id="apiConnectionButton" class="header-button">API连接</button>
+      <button id="refreshButton" class="header-button">刷新</button>
+      <button id="shutdownButton" class="header-button">关闭服务</button>
+    </div>
+  </header>
+
+  <aside id="taskPanel" class="task-panel hidden" aria-live="polite" aria-label="运行中的处理任务">
+    <div class="task-panel-head">
+      <div><p class="step-label">正在处理</p><strong id="taskVideoTitle">—</strong></div>
+      <button id="cancelTaskButton" class="task-cancel" type="button">终止任务</button>
+    </div>
+    <div class="task-stage-row">
+      <span id="taskStageText">准备中</span>
+      <span id="taskProgressText" class="muted">0%</span>
+    </div>
+    <div class="task-progress" role="progressbar" aria-label="任务进度" aria-valuemin="0" aria-valuemax="100">
+      <div id="taskProgressFill" class="task-progress-fill"></div>
+    </div>
+    <div id="taskStageSteps" class="task-stage-steps" aria-label="处理阶段"></div>
+    <p id="taskQueueText" class="task-queue-text"></p>
+  </aside>
+
+  <main id="dashboardView" class="page">
+    <section id="summaryCards" class="summary-grid" aria-label="数据概览"></section>
+
+    <section class="panel upload-panel">
+      <div>
+        <p class="step-label">01 · 输入</p>
+        <h1 class="section-title">上传视频</h1>
+        <p class="muted">支持一次选择一个或多个视频。</p>
+      </div>
+      <div class="upload-actions">
+        <label class="button secondary">选择视频
+          <input id="fileInput" type="file" multiple accept="video/*,.mkv,.avi,.m4v,.webm">
+        </label>
+        <button id="uploadButton" class="button primary">上传所选文件</button>
+        <span id="uploadState" class="muted"></span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="section-head">
+        <div>
+          <p class="step-label">02 · 处理</p>
+          <h1 class="section-title">视频列表</h1>
+        </div>
+        <div class="list-actions">
+          <label class="search-box" aria-label="搜索视频">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg>
+            <input id="searchInput" type="search" placeholder="按视频名称搜索">
+          </label>
+          <span id="selectionCount" class="selection-count">已选择 0 个</span>
+          <button id="processButton" class="button primary">一键处理</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th class="check-cell"><input id="selectAll" type="checkbox" aria-label="全选当前视频"></th>
+            <th>视频</th><th>时长</th><th>原始 ASR</th><th>审核状态</th><th>语义片段</th><th>操作</th>
+          </tr></thead>
+          <tbody id="videoRows"></tbody>
+        </table>
+      </div>
+      <div id="emptyState" class="empty hidden">没有找到视频。</div>
+    </section>
+
+  </main>
+
+  <main id="videoView" class="detail-page hidden">
+    <section class="detail-heading">
+      <button class="back-button" data-back aria-label="返回视频列表">←</button>
+      <div class="detail-titles">
+        <h1 id="videoTitle">—</h1>
+        <p id="currentChapterTitle">—</p>
+      </div>
+      <div class="detail-actions">
+        <span id="reviewBadge" class="badge pending">待审核</span>
+        <button id="confirmButton" class="button primary">确认入库</button>
+      </div>
+    </section>
+
+    <section class="detail-workspace">
+      <div class="detail-main-column">
+        <div class="player-column">
+          <div class="video-shell">
+            <video id="detailVideo" preload="metadata" playsinline></video>
+            <div class="video-controls">
+              <div class="video-timeline">
+                <input id="videoSeek" class="video-seek" type="range" min="0" max="1000" value="0" step="1" aria-label="视频进度">
+                <div id="chapterProgress" class="chapter-progress" aria-label="章节时间点"></div>
+              </div>
+              <div class="video-control-row">
+                <button id="playButton" class="player-button" type="button" aria-label="播放">▶</button>
+                <span id="videoTime" class="video-time">0:00 / 0:00</span>
+                <span class="volume-label" aria-hidden="true">音量</span>
+                <input id="volumeControl" class="volume-control" type="range" min="0" max="1" value="1" step="0.05" aria-label="音量">
+                <span class="control-spacer"></span>
+                <button id="fullscreenButton" class="player-button fullscreen-button" type="button" aria-label="全屏">⛶</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <section class="chapter-document panel">
+          <div class="document-head">
+            <div>
+              <p class="step-label">当前章节</p>
+              <h2 id="documentTitle">—</h2>
+            </div>
+            <button id="editChapterButton" class="icon-edit" aria-label="编辑当前章节" title="编辑当前章节">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 20 4.2-1 10.9-10.9a2.1 2.1 0 0 0-3-3L5.2 16 4 20Zm10.6-13.4 2.8 2.8"/></svg>
+            </button>
+          </div>
+          <div id="chapterDocument" class="markdown-view"></div>
+        </section>
+      </div>
+
+      <aside class="chapter-sidebar">
+        <div class="chapter-list-head">
+          <div><strong>全部章节</strong><span id="chapterCount" class="muted"></span></div>
+        </div>
+        <div id="chapterList" class="chapter-list"></div>
+      </aside>
+    </section>
+  </main>
+
+  <main id="editorView" class="editor-page hidden">
+    <section class="editor-shell">
+      <div class="editor-head">
+        <button id="editorBackButton" class="back-button" aria-label="返回视频页面">←</button>
+        <div>
+          <p class="step-label">章节编辑</p>
+          <h1 id="editorTitle">—</h1>
+        </div>
+        <button id="playChapterButton" class="button secondary" type="button">▶ 播放本章</button>
+        <button id="saveMarkdownButton" class="button primary">保存编辑</button>
+      </div>
+      <div class="editor-grid">
+        <section class="editor-pane">
+          <div class="structured-editor">
+            <label class="editor-field">
+              <span>时间</span>
+              <input id="chapterTimeDisplay" type="text" readonly aria-readonly="true">
+            </label>
+            <label class="editor-field">
+              <span>标题</span>
+              <input id="chapterTitleInput" type="text" maxlength="40" placeholder="请输入章节标题">
+            </label>
+            <label class="editor-field">
+              <span>关键词</span>
+              <input id="chapterKeywordsInput" type="text" placeholder="多个关键词用逗号分隔">
+            </label>
+            <label class="editor-field summary-field">
+              <span>摘要</span>
+              <textarea id="chapterSummaryInput" maxlength="160" placeholder="请输入章节摘要"></textarea>
+            </label>
+            <label class="editor-field content-field">
+              <span>正文</span>
+              <textarea id="chapterContentInput" placeholder="请输入章节正文"></textarea>
+            </label>
+          </div>
+          <section class="ai-review-box" aria-label="AI 建议复核">
+            <div class="ai-review-head">
+              <div>
+                <strong>AI 建议复核</strong>
+                <span id="suggestionCount" class="muted">当前章节</span>
+              </div>
+              <button id="generateMetadataButton" class="button secondary" type="button">一键生成标题、关键词和摘要</button>
+            </div>
+            <div id="suggestionList" class="suggestion-list"></div>
+          </section>
+        </section>
+        <section class="preview-pane">
+          <section id="editorVideoPanel" class="editor-video-panel hidden" aria-label="原视频回看">
+            <div class="editor-video-head">
+              <strong>原视频回看</strong>
+              <div><span id="editorChapterRange">—</span><button id="editorVideoCloseButton" type="button" aria-label="关闭原视频回看" title="关闭">×</button></div>
+            </div>
+            <video id="editorVideo" preload="metadata" playsinline></video>
+            <div class="editor-video-controls">
+              <input id="editorVideoSeek" class="editor-video-seek" type="range" min="0" max="1000" value="0" aria-label="视频进度">
+              <div class="editor-control-row">
+                <button id="editorPlayButton" class="editor-play-button" type="button" aria-label="播放">▶</button>
+                <button id="editorBack5Button" class="editor-icon-button" type="button" aria-label="后退5秒" title="后退5秒"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8V4m0 0H1m4 0L2.7 6.3A9 9 0 1 0 5 4"/><text x="9" y="15.5">5</text></svg></button>
+                <button id="editorForward5Button" class="editor-icon-button" type="button" aria-label="前进5秒" title="前进5秒"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 8V4m0 0h4m-4 0 2.3 2.3A9 9 0 1 1 19 4"/><text x="9" y="15.5">5</text></svg></button>
+                <span id="editorVideoTime" class="editor-video-time">0:00 / 0:00</span>
+                <button id="editorFullscreenButton" class="editor-icon-button" type="button" aria-label="全屏" title="全屏"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5m13 5h5v-5"/></svg></button>
+              </div>
+            </div>
+          </section>
+          <div id="markdownPreview" class="markdown-view"></div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <div id="unsavedEditModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="unsavedEditTitle">
+    <section class="glossary-modal unsaved-edit-modal">
+      <div class="glossary-modal-head">
+        <div>
+          <p class="step-label">未保存修改</p>
+          <h2 id="unsavedEditTitle">内容已修改，是否保存？</h2>
+        </div>
+        <button id="closeUnsavedEditModal" class="modal-close" type="button" aria-label="继续编辑">×</button>
+      </div>
+      <p class="unsaved-edit-message">如果直接返回，本次尚未保存的标题、关键词、摘要和正文修改将会丢失。</p>
+      <div class="glossary-modal-actions unsaved-edit-actions">
+        <button id="discardEditButton" class="button secondary danger-outline" type="button">不保存</button>
+        <button id="saveAndReturnButton" class="button primary" type="button">保存</button>
+      </div>
+    </section>
+  </div>
+
+  <div id="glossaryModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="glossaryModalTitle">
+    <section class="glossary-modal">
+      <div class="glossary-modal-head">
+        <div>
+          <p class="step-label">保存前确认</p>
+          <h2 id="glossaryModalTitle">是否把修改后的词加入词表？</h2>
+        </div>
+        <button id="closeGlossaryModal" class="modal-close" type="button" aria-label="关闭">×</button>
+      </div>
+      <div id="glossaryCandidateList" class="glossary-candidate-list"></div>
+      <div class="glossary-modal-actions">
+        <button id="saveWithoutGlossary" class="button secondary" type="button">不加入词表，直接保存</button>
+        <button id="saveWithGlossary" class="button primary" type="button">加入所选并保存</button>
+      </div>
+    </section>
+  </div>
+
+  <div id="glossaryApplyModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="glossaryApplyTitle">
+    <section class="glossary-modal glossary-apply-modal">
+      <div class="glossary-modal-head">
+        <div>
+          <p class="step-label">词表已保存</p>
+          <h2 id="glossaryApplyTitle">是否搜索并应用到已有数据？</h2>
+        </div>
+      </div>
+      <div id="glossaryApplyChoices" class="glossary-apply-choices">
+        <button id="applyGlossaryDatabase" class="button primary" type="button">应用到整个数据库</button>
+        <button id="applyGlossaryVideo" class="button secondary" type="button">应用到本视频</button>
+        <button id="skipGlossaryApply" class="button secondary" type="button">否，仅修改此处</button>
+      </div>
+      <div id="glossarySearchResults" class="glossary-search-results hidden">
+        <p id="glossarySearchSummary" class="glossary-search-summary"></p>
+        <div id="glossaryHitList" class="glossary-hit-list"></div>
+        <div class="glossary-modal-actions">
+          <button id="cancelGlossaryHits" class="button secondary" type="button">全部放弃</button>
+          <button id="applySelectedGlossaryHits" class="button primary" type="button">应用所选</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <dialog id="apiDialog" class="api-dialog">
+    <form id="apiForm" class="api-form">
+      <div class="api-dialog-head">
+        <div><p class="api-kicker">云端模型</p><h2>API连接</h2></div>
+        <button id="closeApiDialog" class="api-close" type="button" aria-label="关闭">×</button>
+      </div>
+      <p id="apiConnectionStatus" class="api-status">正在读取连接状态…</p>
+      <label>模型名称<input id="apiModelInput" name="model" list="apiModelOptions" value="glm-5.3" required></label>
+      <datalist id="apiModelOptions"><option value="glm-5.3"></option><option value="glm-4.5"></option></datalist>
+      <label>API地址<input id="apiUrlInput" name="api_url" type="url" required></label>
+      <label>API Key<input id="apiKeyInput" name="api_key" type="password" autocomplete="off" placeholder="请输入 API Key"></label>
+      <p class="api-help">连接成功后配置保存在当前项目文件夹中，会随U盘一起移动。已连接时留空可继续使用原密钥。</p>
+      <div class="api-actions"><button id="disconnectApiButton" type="button">断开连接</button><button id="connectApiButton" type="submit">测试并保存</button></div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast hidden" role="status"></div>
+  <script src="/static/app.js?v=20260923-structured-save-1" defer></script>
+</body>
+</html>

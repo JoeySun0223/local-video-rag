@@ -1,151 +1,99 @@
-# 本地视频知识库
+# 视频知识数据流水线
 
-本项目在本机完成视频转写、章节划分、Embedding、检索、重排和 Qwen 问答。程序默认只监听
-`127.0.0.1`，不会把视频、转写或问题发送给云端模型。电脑可以联网，但运行知识库不依赖云端推理。
+本项目负责把视频处理为后续 Embedding、检索和问答可直接使用的结构化数据。目前流程到语义片段为止，尚未建立向量索引。
 
-## 一键运行
+首次部署与开发交接请先阅读 [HANDOFF.md](HANDOFF.md)。仓库包含代码、测试和默认配置；视频、模型、运行环境、审核历史、业务词表及 API 密钥在本地准备，不随 Git 分发。
 
-- 双击 `启动本地视频知识库.cmd`：启动项目内独立 `llama-server`，按 `config.yaml` 加载指定 Qwen，
-  启动网页，预热 BGE embedding/reranker，最后打开浏览器。
-- 双击 `关闭本地视频知识库.cmd`：如果有入库任务，可选择等待或安全取消；随后关闭网页、卸载
-  BGE 与 reranker 所在进程，并停止 `llama-server` 以完整卸载 Qwen。
-
-等价命令：
-
-```powershell
-.\venv\Scripts\python.exe .\rag.py start
-.\venv\Scripts\python.exe .\rag.py stop
-```
-
-默认网页为 <http://127.0.0.1:8765>。要更换 Qwen，修改 `config.yaml` 的
-`llm.model_path` 与 `llm.model`；启动器会直接加载项目内 GGUF，并验证实际上下文长度。
-
-## 处理和检索方法
-
-- ASR：默认 `Qwen3-ASR-1.7B-hf`，再用独立 `Qwen3-ForcedAligner-0.6B-hf` 生成真实词/字时间戳。
-  项目遵循官方时间戳模式：最多 180 秒低能量切块，每块转写和对齐后直接拼接全文并恢复全片时间
-  偏移，最后只在合并后的全文上分句。模型切块边界不再被当作句子边界，Qwen 路径不调用 CT-Punc。
-  旧 SeACo-Paraformer + FSMN-VAD + CT-Punc 作为可手动切换的 Provider 保留，
-  不会静默回退。
-- 父章节：BGE 左右窗口主题变化为主信号，结合本视频相对静音和话语标记，再用动态规划约束
-  章节时长。Qwen 只能在确定性候选附近复核，并生成标题、摘要和关键词。
-- 子 Chunk：只在完整句之间切，正文不重叠；Embedding 可携带一条只读邻句，并对最终输入执行
-  512-token 硬校验。
-- 召回：`bge-large-zh-v1.5` + SQLite FTS；CPU `bge-reranker-base` 重排；按章节聚合后最多
-  返回 3 个相关章节。
-- 回答：Qwen 只看到带明确 chunk/section ID 的检索证据。召回、重排或生成证据门任一失败时，
-  明确回答“当前知识库中没有足够信息”。当前阈值是保守初值，需用本人的库内/库外问题评测后校准。
-
-## 数据保存结构
+## 工程结构
 
 ```text
-knowledge_base/
-  manifest.json                       # 资产格式和相对路径约定
-  data/
-    metadata.db                       # 唯一正式主数据
-    indexes/                          # 可重建FAISS；保留当前和上一版本
-    builds/<source_id>/<build_id>/    # 分层人工检查JSON
-      source.json
-      sentences.json                 # 唯一完整正文快照：raw/approved/时间戳
-      sections.json                  # 章节范围、标题、摘要、边界依据
-      chunks.json                    # Chunk范围和token统计
-      corrections.json               # 术语纠错候选
-      build.json                     # 配置、ASR来源、模型、词表、降级状态
-      asr_raw.json                   # 原始转写、分片、对齐器时间戳和资源记录
-      asr_preflight.json             # 首/中/尾三段预检、耗时估算和内存峰值
-    cache/<source_id>/audio.wav       # 可再生ASR音频
-    clips/                            # 可再生章节视频缓存
-    tasks/<task_id>/status.json       # 任务历史，不是当前知识库真相
-    exports/.../sections_expanded.json # 按需生成的完整章节检查导出
-  media/                              # 受管视频；播放和重建依赖它
-  glossaries/global.json
-  glossaries/categories/<类别>.json
-  glossaries/sources/<source_id>.json # 人工受控术语映射
+D:\asr_test\
+├─ video_pipeline\       # 处理代码与配置
+│  ├─ asr\               # 本地 ASR
+│  ├─ cleanup\           # GLM 清洗与纠错审核逻辑
+│  ├─ segments\          # 一次性语义边界规划与片段标签生成
+│  ├─ validation\        # 跨阶段数据校验
+│  ├─ services\          # 目录、队列、编辑、词表和事务服务
+│  ├─ shared\            # 配置、文件 I/O、GLM 客户端
+│  └─ config.json
+├─ beginner_webui\       # 当前唯一 Web UI（端口 8876）
+├─ data\                 # 正式知识数据
+│  ├─ videos\
+│  ├─ asr_raw\
+│  ├─ cleaned_asr\
+│  ├─ semantic_segments\      # 可编辑的结构化 JSON
+│  └─ semantic_markdown\      # 与 JSON 同步的完整 Markdown
+├─ history\              # 当前清洗审核记录和处理审计
+├─ work\                 # ASR checkpoint 和临时运行状态
+├─ tests\                # 自动化测试
+├─ resources\            # 合并后的业务词表等资源
+├─ models\               # 当前流程使用的本地模型
+├─ tools\                # 本地 FFmpeg 可执行文件（不进 Git）
+└─ venv\                 # Python 虚拟环境
 ```
 
-`knowledge_base/` 是可整体复制的知识资产目录，数据库中的视频引用使用相对此目录的路径。
+代码、正式数据、审核状态、历史档案和运行缓存相互独立。修改或重装 `video_pipeline` 不需要移动 `data`。
 
-网页“检查数据”可以查看原始/批准后的句子、每个章节全文、Chunk范围、边界依据和 Build 历史；
-“导出完整章节”按需生成 expanded JSON。检索不读取检查 JSON，而读取 SQLite 当前
-`current_build_id` 和对应 FAISS 版本。
+## 运行命令
 
-正文只以 `sentences.raw_text` 为不可变原文。人工批准的确定性术语修正写到 `approved_text`；
-章节和 Chunk 只保存句子范围，检索物化文档是可重建派生数据。摘要仅用于导航和回答辅助，
-不替代原文，也不是 Embedding 的事实来源。
+所有命令均在项目根目录下执行，不要求固定安装在 `D:\asr_test`。默认分区和云端模型参数由 `video_pipeline/config.json` 配置。
 
-## 入库与术语
+### Web 可视化操作
 
-网页选择视频后可不填类别，默认“未分类”。页面持续显示阶段、百分比、消息、阶段耗时和绝对
-保存路径；只有出现“入库完成 / 新 Build 已原子切换并可检索”才算完成。失败或安全取消不替换
-原来可用的 Build。
+双击 `启动视频处理界面.cmd`，浏览器会打开 <http://127.0.0.1:8876>。页面支持：
 
-Qwen3-ASR 入库会先实测开头、中段、结尾各 60 秒，然后暂停并显示预计全片耗时和内存峰值。
-只有点击“确认并运行完整ASR”才继续。ASR 阶段会暂停问答并暂时卸载 BGE、reranker 和 llama-server
-Qwen；ASR/对齐器结束后程序先重新预热问答模型，才会显示入库完成，所以之后的提问不承担这次
-重新加载成本。
+- 单个或批量上传视频；
+- 勾选视频后一键完成本地 ASR、GLM 清洗和语义章节生成；
+- 查看视频、章节时间点、章节截图和处理进度，并可终止任务；
+- 编辑章节标题、摘要、关键词和正文，实时预览 Markdown；
+- 批准、拒绝或自定义修改已归档的 AI 清洗建议；
+- 基于当前章节正文生成标题、摘要和关键词，确认前不会直接写盘；
+- 从人工修改中提取词表候选，并按视频或整个资料库搜索、选择性应用；
+- 编辑完成后确认入库，或删除明确选中的视频及其项目内派生物。
+
+人工修改会保留原句 ID 与时间，更新当前分区的 `cleaned_asr` 和 `semantic_segments` JSON，并同步生成 `semantic_markdown`。保存前会校验句子覆盖、章节连续性和字段长度；过期页面保存返回 409。正在处理队列中的视频暂不允许同时人工修改。
+
+章节编辑中的云端生成只把结果回填到当前页面，不会立即写入文件。可以继续人工修改模型给出的标题、摘要和关键词，最后保存章节。云端调用沿用 `video_pipeline/config.json` 的模型设置和项目内连接状态。
+
+双击 `关闭视频处理界面.cmd` 或点击页面右上角“关闭服务”即可关闭。为避免中断本地模型或写入过程，存在运行中或排队任务时会拒绝关闭。
+
+也可以使用命令行启动且不自动打开浏览器：
 
 ```powershell
-.\venv\Scripts\python.exe .\rag.py ingest ".\incoming\example.mp4" --category "前端技术"
-.\venv\Scripts\python.exe .\rag.py ingest ".\incoming\example.mp4" --yes
-.\venv\Scripts\python.exe .\rag.py ingest .\video.mp4 --sentences-json .\sentences.json --no-llm
+.\venv\Scripts\python.exe -m beginner_webui --no-browser
 ```
 
-外部句子 JSON 必须是连续 ID、非空完整句、单调且不重叠的时间范围。程序不截断句子。
+上传但尚未生成 ASR 的视频保存在 `work/uploads`；生成 ASR 后，现有 ASR 流程会把视频复制到正式 `data/videos`。
 
-术语表格式：
+### 内部阶段入口（供开发与运维排错）
 
-```json
-{
-  "TCP/IP": ["Pcpip", "TCPIP"],
-  "DNS": ["d ns"]
-}
-```
-
-替换最长词优先，ASCII 术语检查词边界；原始 ASR 永不覆盖。空 `{}` 表示没有已批准的领域映射，
-不是模型漏生成了术语表。术语映射是人工受控数据，不由 Qwen 自由改写。
-
-数据检查页面支持逐句编辑人工校订文本。点击“预览全部修改”后会列出每个句子的修改前后内容和
-所有差异片段；可明确勾选其中哪些“错词 → 规范词”进入来源术语表。点击“一键修改并同步全部
-资产”后，系统使用原时间戳生成替换Build，并同步章节、Chunk、FTS、Embedding和FAISS；原始
-ASR文本不覆盖，失败不会切换当前Build。
-
-## ASR Provider 与模型来源
-
-在 `config.yaml` 中修改 `asr.primary`：
-
-```yaml
-asr:
-  primary: qwen3_asr  # 手动切回旧模型时改为 funasr
-```
-
-Qwen3-ASR 和 ForcedAligner 优先从 ModelScope 官方 `Qwen` 命名空间下载到
-`models/qwen3-asr-1.7b-hf` 与 `models/qwen3-forced-aligner-0.6b-hf`。模型来源、revision 和关键
-文件哈希写入 `models/manifest.json` 及各 Build 的 ASR provenance；运行时始终
-`local_files_only=True`，不会临时访问云端。官方 BF16 模型与旧 FunASR 模型均保留在本机。
-
-## 自检与维护
+正式操作走 WebUI。当前任务 worker 为隔离耗时模型进程，调用以下内部入口；这些命令会直接写项目文件，不能作为独立的产品操作流程或权限边界。
 
 ```powershell
-.\venv\Scripts\python.exe .\rag.py doctor
-.\venv\Scripts\python.exe .\rag.py doctor --hashes
-.\venv\Scripts\python.exe .\rag.py status
-.\venv\Scripts\python.exe .\rag.py rebuild-index
-.\venv\Scripts\python.exe .\rag.py export-sections <source_id>
-.\venv\Scripts\python.exe .\rag.py backup
+# 1. 视频 -> 本地原始 ASR
+.\venv\Scripts\python.exe -m video_pipeline.asr <视频或目录> --partition 2026-09
+
+# 2. 原始 ASR -> GLM 清洗文本
+.\venv\Scripts\python.exe -m video_pipeline.cleanup --partition 2026-09
+
+# 3. 清洗文本 -> 可检索、可播放的语义片段
+.\venv\Scripts\python.exe -m video_pipeline.segments --partition 2026-09
+
+# 4. 不调用模型的全流程数据校验
+.\venv\Scripts\python.exe -m video_pipeline.validation --partition 2026-09
 ```
 
-新 Build 先暂存，完整新 FAISS 写好后才在一次数据库事务中切换来源和索引指针。启动/doctor
-核对 DB chunk ID、mapping、FAISS 数量和哈希，不一致时从 SQLite 重建。删除来源默认保留视频。
+云端连接优先使用 WebUI 保存的项目内连接状态，未保存时可使用环境变量 `ZHIPUAI_API_KEY`。各阶段默认跳过已有结果；显式 `--overwrite` 也不能覆盖已有下游、审核或人工确认结果。
 
-提问返回检索重排、Qwen 回答和总耗时。首次提问还可能包含模型预热；以后通常主要耗时在 CPU
-reranker 和 Qwen 生成，实际以页面分阶段数据为准。
+新版清洗不会暂停等待逐句审核。模型候选会自动采用并写入 `cleaned_asr`，完整记录归档到 `history/cleanup/<分区>/<video_id>.json`，供章节编辑时复核。
 
-当前不做 OCR：音频型 MP4 没有画面；有画面的视频也不应盲目逐帧 OCR。以后添加时先用场景
-变化和固定稀疏采样找关键帧，把 OCR 作为可选派生证据，不改写 ASR 原文。
+前后端调用字段、状态和时间轴规则见 [video_pipeline/INTERFACES.md](video_pipeline/INTERFACES.md)。
 
-## 工程与迁移文档
+未来的 Embedding 和索引建议分别加入 `data/embeddings`、`data/indexes`，实现代码则放入 `video_pipeline/embedding` 和 `video_pipeline/retrieval`。旧版 RAG 和 8765 Web UI 已退出当前运行路径；本版本不依赖开发者电脑上的归档目录。
 
-- `docs/KNOWLEDGE_BASE_RUNTIME.md`：处理完成后的检索、回答与视频播放还需要什么。
-- `docs/SETUP_AND_MIGRATION.md`：完整环境、模型、GitHub整理和跨电脑迁移。
-- `docs/GPU_ACCELERATION.md`：CPU现状及NVIDIA CUDA配置。
-- `docs/CLOUD_MODEL_MIGRATION.md`：把ASR、Embedding、Reranker和回答LLM替换为云Provider。
+运行自动化测试：
+
+```powershell
+.\venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py"
+.\venv\Scripts\python.exe -m unittest discover -s beginner_webui/tests -p "test_*.py"
+```

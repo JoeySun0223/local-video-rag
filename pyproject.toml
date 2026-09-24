@@ -1,9 +1,5 @@
 [project]
-name = "local-video-rag"
-version = "0.3.0"
-description = "Offline-first local video knowledge base with traceable timed evidence"
+name = "video-asr-pipeline"
+version = "0.5.0"
+description = "Local ASR and cloud semantic segmentation pipeline with a browser UI"
 requires-python = ">=3.11,<3.12"
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-
